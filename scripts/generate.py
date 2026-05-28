@@ -256,6 +256,27 @@ def draft_section(content_type: str, outline: Dict[str, Any],
     return (response or f"[GENERATION FAILED for section: {section.get('heading_ar', '')}]").strip()
 
 
+def _arabic_char_ratio_via_toolkit(text: str) -> Optional[float]:
+    """v1.4.0: route language detection through the toolkit's canonical
+    arabic_normalize contract. Falls back to ad-hoc count if toolkit absent."""
+    try:
+        # Toolkit at sibling path; same resolution _toolkit_root uses
+        tk = _toolkit_root()
+        if tk is None:
+            # Fallback: ad-hoc count (preserves v1.3.0 behavior when toolkit
+            # is unavailable). Matches the formula in arabic_normalize.py.
+            ar_chars = sum(1 for c in text if "؀" <= c <= "ۿ" and c.isalpha())
+            total_letters = sum(1 for c in text if c.isalpha())
+            return (ar_chars / total_letters) if total_letters > 0 else 0.0
+        scripts_dir = tk / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from arabic_normalize import arabic_char_ratio  # type: ignore
+        return arabic_char_ratio(text)
+    except Exception:
+        return None
+
+
 def humanizer_gate(text_ar: str, threshold: int = 60, register: str = "news") -> Dict[str, Any]:
     """Score Arabic text via the humanizer's score_text() function (v2.9.0+).
     Falls back to a 6-tell heuristic if the humanizer isn't importable.
@@ -277,11 +298,11 @@ def humanizer_gate(text_ar: str, threshold: int = 60, register: str = "news") ->
     # v1.3.0: language sanity check — the score_text heuristic only counts
     # Arabic AI-tells, so an English output trivially scores 100 (false positive
     # surfaced by swarm mode). Penalize outputs that aren't predominantly Arabic.
+    # v1.4.0: route through toolkit's arabic_normalize.is_arabic_dominant
+    # (Gap G1 shared contract) instead of the ad-hoc inline ratio check.
     if text_ar:
-        ar_chars = sum(1 for c in text_ar if '؀' <= c <= 'ۿ')
-        total_letters = sum(1 for c in text_ar if c.isalpha())
-        ar_ratio = (ar_chars / total_letters) if total_letters > 0 else 0.0
-        if ar_ratio < 0.5:
+        ratio = _arabic_char_ratio_via_toolkit(text_ar)
+        if ratio is not None and ratio < 0.5:
             return {
                 "available": True,
                 "score": 0,
@@ -289,9 +310,9 @@ def humanizer_gate(text_ar: str, threshold: int = 60, register: str = "news") ->
                 "total_words": len(text_ar.split()),
                 "threshold": threshold,
                 "passes_gate": False,
-                "backend": "language_check_failed",
+                "backend": "language_check_failed (via arabic_normalize)",
                 "language_mismatch": True,
-                "ar_char_ratio": round(ar_ratio, 2),
+                "ar_char_ratio": round(ratio, 2),
                 "reason": "output is not predominantly Arabic — likely English or mixed",
             }
 
