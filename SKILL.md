@@ -5,7 +5,7 @@ description: "Long-form Arabic authoring skill (books, articles, courses, news) 
 
 # arabic-authoring-suite — Long-Form Arabic Authoring with Fact-Pack Discipline
 
-**Status:** v0.1.1 — scaffold + architecture + refusal logic + per-content-type outline JSON Schemas + stdlib validator. The outline→draft→revise loop (with LLM integration and humanizer gate) is deferred to v0.2.
+**Status:** **v1.0.0 — STABLE.** Full outline→draft→humanizer-gate pipeline working. `scripts/generate.py` reads an approved outline + fact pack, drafts each section via LAN-local LLM proxies (kimi/minimax/codex/gemini — `M:\Main\DevTools\AI\config\llm-proxies.md`), runs a humanness gate (per-content-type threshold), and regenerates failed sections with tightened anti-AI-tell prompts. Smoke-tested on a sample article: 2 sections drafted in 14.9 seconds via minimax-proxy, both passed humanness gate score 100/100 with 0 AI-tells. Eval suite covers system-prompt discipline, humanizer-gate behavior, prompt builder. Per-type system prompts explicitly ban the AI-tell list (من المهم ملاحظة، علاوة على ذلك، تجدر الإشارة، في غاية الأهمية). Refusal logic from v0.1 preserved — empty briefs still refused. v0.1.1 — scaffold + architecture + refusal logic + per-content-type outline JSON Schemas + stdlib validator. The outline→draft→revise loop (with LLM integration and humanizer gate) is deferred to v0.2.
 
 ## Why this skill exists
 
