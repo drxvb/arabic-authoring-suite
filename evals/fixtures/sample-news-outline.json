@@ -1,0 +1,21 @@
+{
+  "type": "news",
+  "headline_ar": "افتتاح معرض الرياض الدولي للتقنية في نسخته الخامسة",
+  "lede_ar": "افتتح وزير الاتصالات وتقنية المعلومات اليوم الخميس معرض الرياض الدولي للتقنية بمشاركة أكثر من 800 شركة عالمية.",
+  "register": "news",
+  "fact_pack_ref": "./sample-news-fact-pack.md",
+  "dateline": {"location_ar": "الرياض", "date_iso": "2026-05-28"},
+  "five_w_h": {
+    "who_ar": "وزير الاتصالات وتقنية المعلومات",
+    "what_ar": "افتتاح معرض الرياض الدولي للتقنية",
+    "when_ar": "اليوم الخميس",
+    "where_ar": "الرياض"
+  },
+  "sections": [
+    {
+      "intent": "Cover the opening ceremony and headline figures: attendance, sponsors, programme highlights.",
+      "source_refs": ["[1]"],
+      "word_budget": 200
+    }
+  ]
+}

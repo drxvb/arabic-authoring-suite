@@ -1,0 +1,29 @@
+{
+  "type": "book-chapter",
+  "title_ar": "تطور التحول الرقمي في المملكة العربية السعودية",
+  "chapter_number": 3,
+  "register": "classical",
+  "fact_pack_ref": "./sample-book-chapter-fact-pack.md",
+  "sections": [
+    {
+      "heading_ar": "المرحلة التأسيسية للتحول الرقمي (2016-2020)",
+      "intent": "Trace the foundational phase of Saudi Arabia's digital transformation from Vision 2030 launch through pre-pandemic milestones. Cite specific policy initiatives and infrastructure projects.",
+      "source_refs": ["[1]", "[2]"],
+      "claims": [
+        "Vision 2030 launched in 2016 with explicit digital transformation pillars",
+        "National Digital Transformation Unit established"
+      ],
+      "word_budget": 500
+    },
+    {
+      "heading_ar": "التسريع في حقبة الجائحة (2020-2022)",
+      "intent": "Analyze how the COVID-19 pandemic accelerated digital adoption in Saudi government and private sectors. Reference healthcare digitization (Tawakkalna, Sehhaty) and education.",
+      "source_refs": ["[2]", "[3]"],
+      "claims": [
+        "Tawakkalna app reached 30 million users",
+        "Distance learning platforms scaled to 7 million students"
+      ],
+      "word_budget": 600
+    }
+  ]
+}
