@@ -140,13 +140,28 @@ def _find_terminology_hits(text: str, domain: str) -> List[Dict[str, Any]]:
     return hits
 
 
-# Map content type -> terminology domain
+# Map content type -> terminology domain.
+# v1.3.1: defaults preserved for backward compat, but consumers can override
+# per-call via the outline's `terminology_domain` field. Sonnet's evaluator
+# audit flagged this hardcoding: "A book chapter on Saudi labor law gets
+# injected with 5G/IoT terminology hints because article/book-chapter both
+# default to technology domain."
 CONTENT_TYPE_TO_DOMAIN = {
     "article": "technology",       # most authored articles are tech in our corpus
-    "book-chapter": "technology",
+    "book-chapter": "technology",  # override via outline.terminology_domain="legal" etc.
     "course-module": "technology",
     "news": "news",
 }
+
+
+def _resolve_terminology_domain(content_type: str, outline: Dict[str, Any]) -> str:
+    """v1.3.1: explicit outline override beats per-content-type default.
+    Outline can carry `terminology_domain: "legal"` etc. to escape the
+    hardcoded technology default."""
+    explicit = (outline or {}).get("terminology_domain")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    return CONTENT_TYPE_TO_DOMAIN.get(content_type, "technology")
 
 
 def _call_proxy(proxy_name: str, system_prompt: str, user_prompt: str,
@@ -209,7 +224,8 @@ def _build_section_prompt(content_type: str, outline: Dict[str, Any],
     parts.append("")
 
     # v1.0.1: terminology hints from Asset G
-    domain = CONTENT_TYPE_TO_DOMAIN.get(content_type, "technology")
+    # v1.3.1: domain resolution prefers outline.terminology_domain override
+    domain = _resolve_terminology_domain(content_type, outline)
     scan_text = f"{outline.get('title_ar','')} {section.get('intent','')} {fact_pack_text[:6000]}"
     term_hits = _find_terminology_hits(scan_text, domain)
     if term_hits:
