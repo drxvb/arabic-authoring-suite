@@ -274,9 +274,14 @@ def _build_section_prompt(content_type: str, outline: Dict[str, Any],
 
     # v1.0.1: terminology hints from Asset G
     # v1.3.1: domain resolution prefers outline.terminology_domain override
+    # v1.5.1: thread the trace from outline so emit_trace=True actually
+    # produces influence records on the production code path (A4 Sonnet
+    # killer finding: smoke test passed trace explicitly; production path
+    # didn't; result was empty trace for the primary use case).
     domain = _resolve_terminology_domain(content_type, outline)
     scan_text = f"{outline.get('title_ar','')} {section.get('intent','')} {fact_pack_text[:6000]}"
-    term_hits = _find_terminology_hits(scan_text, domain)
+    trace = outline.get("_trace") if isinstance(outline, dict) else None
+    term_hits = _find_terminology_hits(scan_text, domain, trace=trace)
     if term_hits:
         parts.append(f"# Corpus-grounded terminology (use these exact AR forms — domain={domain})")
         for h in term_hits[:20]:  # cap to 20 hints
