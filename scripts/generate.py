@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -73,6 +74,81 @@ SECTION_SYSTEM_PROMPT_BY_TYPE = {
 }
 
 
+# v1.0.1: Asset G (toolkit's paired EN<->AR terminology) consumption.
+# When drafting, scan the fact pack + section intent for English terms whose
+# AR translation is corpus-attested, and inject as terminology hints in the
+# prompt so the LLM uses consistent terminology across sections.
+
+def _toolkit_root() -> Optional[Path]:
+    override = os.environ.get("ARABIC_CORPUS_TOOLKIT_ROOT")
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    candidates.append(Path(__file__).resolve().parent.parent.parent / "arabic-corpus-toolkit")
+    for c in candidates:
+        if (c / "corpus" / "domain-terminology.json").exists():
+            return c
+    return None
+
+
+_asset_g_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+
+
+def _load_asset_g(domain: str = "technology") -> Optional[Dict[str, Any]]:
+    """Load paired EN<->AR terminology for the given domain. None if unavailable.
+    Same domain-keyed pattern as translator v1.0.1."""
+    if domain in _asset_g_cache:
+        return _asset_g_cache[domain]
+    tk = _toolkit_root()
+    if tk is None:
+        _asset_g_cache[domain] = None
+        return None
+    fname = "domain-terminology.json" if domain == "technology" else f"domain-terminology-{domain}.json"
+    p = tk / "corpus" / fname
+    if not p.exists():
+        _asset_g_cache[domain] = None
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        _asset_g_cache[domain] = None
+        return None
+    if data.get("$schema_version", "0.0.0").split(".")[0] != "1":
+        _asset_g_cache[domain] = None
+        return None
+    by_en = {p.get("en", "").strip().lower(): p for p in data.get("pairs", []) if p.get("en")}
+    data["_by_en"] = by_en
+    _asset_g_cache[domain] = data
+    return data
+
+
+def _find_terminology_hits(text: str, domain: str) -> List[Dict[str, Any]]:
+    """Whole-word EN scan of text against Asset G for the given domain."""
+    data = _load_asset_g(domain)
+    if data is None or not text:
+        return []
+    text_lower = text.lower()
+    by_en = data.get("_by_en", {})
+    hits = []
+    seen = set()
+    for en in sorted(by_en.keys(), key=len, reverse=True):
+        if en in seen:
+            continue
+        if re.search(r"\b" + re.escape(en) + r"\b", text_lower):
+            hits.append(by_en[en])
+            seen.add(en)
+    return hits
+
+
+# Map content type -> terminology domain
+CONTENT_TYPE_TO_DOMAIN = {
+    "article": "technology",       # most authored articles are tech in our corpus
+    "book-chapter": "technology",
+    "course-module": "technology",
+    "news": "news",
+}
+
+
 def _call_proxy(proxy_name: str, system_prompt: str, user_prompt: str,
                 timeout: int = 180, temperature: float = 0.3) -> Optional[str]:
     """POST to a proxy; return assistant content or None."""
@@ -108,7 +184,9 @@ def _call_proxy(proxy_name: str, system_prompt: str, user_prompt: str,
 
 def _build_section_prompt(content_type: str, outline: Dict[str, Any],
                           section: Dict[str, Any], fact_pack_text: str) -> str:
-    """Build the user prompt for drafting one section."""
+    """Build the user prompt for drafting one section.
+    v1.0.1: injects Asset G terminology hints for any EN tech/news term that
+    appears in the fact pack."""
     parts = []
     parts.append(f"# Outline context")
     parts.append(f"Content type: {content_type}")
@@ -129,11 +207,24 @@ def _build_section_prompt(content_type: str, outline: Dict[str, Any],
         for c in section["claims"]:
             parts.append(f"  - {c}")
     parts.append("")
+
+    # v1.0.1: terminology hints from Asset G
+    domain = CONTENT_TYPE_TO_DOMAIN.get(content_type, "technology")
+    scan_text = f"{outline.get('title_ar','')} {section.get('intent','')} {fact_pack_text[:6000]}"
+    term_hits = _find_terminology_hits(scan_text, domain)
+    if term_hits:
+        parts.append(f"# Corpus-grounded terminology (use these exact AR forms — domain={domain})")
+        for h in term_hits[:20]:  # cap to 20 hints
+            parts.append(f"  - {h['en']} → {h['ar']}")
+        parts.append("")
+
     parts.append("# Fact pack")
-    parts.append(fact_pack_text[:6000])  # cap to keep prompt size sane
+    parts.append(fact_pack_text[:6000])
     parts.append("")
     parts.append(f"Write this section in MSA Arabic, ~{section.get('word_budget', 300)} words, "
-                 "drawing only from the fact pack above. Output Arabic prose only.")
+                 "drawing only from the fact pack above. "
+                 "Use the corpus-grounded terminology mappings above for any term that appears in the prose. "
+                 "Output Arabic prose only.")
     return "\n".join(parts)
 
 
