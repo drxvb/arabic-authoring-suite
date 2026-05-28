@@ -160,10 +160,15 @@ def _load_asset_g(domain: str = "technology") -> Optional[Dict[str, Any]]:
 
 
 def _find_terminology_hits(text: str, domain: str,
-                            trace=None) -> List[Dict[str, Any]]:
+                            trace=None,
+                            min_consensus: int = 1) -> List[Dict[str, Any]]:
     """Whole-word EN scan of text against Asset G for the given domain.
     v1.5.0: if a trace is provided, record each term hit as an influence
-    record citing G.{domain} + the term_hint_injected trigger."""
+    record citing G.{domain} + the term_hint_injected trigger.
+    v1.6.0: min_consensus filter. Pairs with n_independent_agree < min_consensus
+    are skipped (and NOT traced — they didn't fire). Pairs missing the field
+    (G.technology, G.news — pre-toolkit-v1.10.0 assets) pass through
+    unchanged for backward compat."""
     data = _load_asset_g(domain)
     if data is None or not text:
         return []
@@ -177,13 +182,18 @@ def _find_terminology_hits(text: str, domain: str,
             continue
         if re.search(r"\b" + re.escape(en) + r"\b", text_lower):
             pair = by_en[en]
+            n_indep = pair.get("n_independent_agree")
+            if n_indep is not None and n_indep < min_consensus:
+                seen.add(en)
+                continue
             hits.append(pair)
             seen.add(en)
             if trace is not None:
                 trace.record(
                     asset_id=f"G.{domain}", asset_version=asset_version,
                     trigger="term_hint_injected",
-                    evidence={"en": pair.get("en"), "ar": pair.get("ar")},
+                    evidence={"en": pair.get("en"), "ar": pair.get("ar"),
+                              "n_independent_agree": n_indep},
                     stage="prompt_construction",
                 )
     return hits
@@ -281,7 +291,10 @@ def _build_section_prompt(content_type: str, outline: Dict[str, Any],
     domain = _resolve_terminology_domain(content_type, outline)
     scan_text = f"{outline.get('title_ar','')} {section.get('intent','')} {fact_pack_text[:6000]}"
     trace = outline.get("_trace") if isinstance(outline, dict) else None
-    term_hits = _find_terminology_hits(scan_text, domain, trace=trace)
+    # v1.6.0: min_consensus threads in via outline (no signature change for
+    # _build_section_prompt — outline already carries per-call config).
+    min_consensus = int(outline.get("min_consensus", 1)) if isinstance(outline, dict) else 1
+    term_hits = _find_terminology_hits(scan_text, domain, trace=trace, min_consensus=min_consensus)
     if term_hits:
         parts.append(f"# Corpus-grounded terminology (use these exact AR forms — domain={domain})")
         for h in term_hits[:20]:  # cap to 20 hints
@@ -441,18 +454,27 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
              humanness_threshold: int = 60,
              max_regen_per_section: int = 1,
              swarm_proxies: Optional[List[str]] = None,
-             emit_trace: bool = False) -> Dict[str, Any]:
+             emit_trace: bool = False,
+             min_consensus: int = 1) -> Dict[str, Any]:
     """Full outline → draft → gate → optional regen loop.
     v1.5.0: when emit_trace=True, instantiates InfluenceTrace and threads it
     through prompt construction so every Asset G term hint is causally
     recorded. The serialized trace is returned in the result dict's
-    influence_trace field."""
+    influence_trace field.
+    v1.6.0: min_consensus param filters Asset G terminology hits by
+    n_independent_agree (3-vendor cross-validation tier from toolkit
+    v1.10.0+). Default=1 preserves prior behavior. Use min_consensus=2 for
+    majority-validated terminology only, =3 for unanimous. Pairs lacking
+    the field (G.technology, G.news) pass through unchanged."""
     started = time.time()
     sections_out: List[Dict[str, Any]] = []
     # v1.5.0: attach trace to outline so _find_terminology_hits can append
     trace = _new_authoring_trace() if emit_trace else None
     if trace is not None and isinstance(outline, dict):
         outline["_trace"] = trace
+    # v1.6.0: thread min_consensus through outline so _build_section_prompt picks it up
+    if isinstance(outline, dict):
+        outline["min_consensus"] = min_consensus
     for i, section in enumerate(outline.get("sections", []), start=1):
         sys.stderr.write(f"Drafting section {i}/{len(outline['sections'])}: {section.get('heading_ar', '')[:50]}\n")
         if swarm_proxies:
