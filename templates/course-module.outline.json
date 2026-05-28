@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/drxvb/arabic-authoring-suite/templates/course-module.outline.json",
+  "title": "Course module outline (arabic-authoring-suite)",
+  "description": "Schema for an Arabic course module (technical/opinion register). Differs from article and book chapter in three structural ways: (1) requires learning_objectives at the top level; (2) requires exercises with answer keys; (3) sections include a 'pedagogical_role' tag (intro/concept/example/exercise/synthesis) used by the drafter to vary tone and structure across sections.",
+  "type": "object",
+  "required": ["type", "title_ar", "register", "sections", "fact_pack_ref",
+               "learning_objectives", "prerequisites", "exercises"],
+  "properties": {
+    "type": {
+      "const": "course-module"
+    },
+    "title_ar": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 200
+    },
+    "module_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "register": {
+      "enum": ["technical", "opinion"]
+    },
+    "fact_pack_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "learning_objectives": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "minLength": 15,
+        "description": "Bloom-style objective: 'By the end of this module, the learner will be able to ...'. The drafter checks each section against the objective list at humanizer-gate time."
+      }
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Prior knowledge assumed. Empty array is allowed for intro-level modules."
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "exercises": {
+      "type": "array",
+      "minItems": 3,
+      "items": { "$ref": "#/$defs/exercise" },
+      "description": "Minimum 3 exercises with answer keys. Drafted alongside the module body, not after."
+    },
+    "key_terms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["term_ar", "definition_ar"],
+        "properties": {
+          "term_ar": { "type": "string" },
+          "term_en": { "type": "string" },
+          "definition_ar": { "type": "string", "minLength": 10 }
+        },
+        "additionalProperties": false
+      },
+      "description": "Glossary entries cross-referenced into the prose. Sourced from arabic-corpus-toolkit dictionary when available; module-specific terms added inline."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["heading_ar", "intent", "pedagogical_role", "word_budget"],
+      "properties": {
+        "heading_ar": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "intent": { "type": "string", "minLength": 20, "maxLength": 500 },
+        "pedagogical_role": {
+          "enum": ["intro", "concept", "example", "exercise", "synthesis"],
+          "description": "Drives tone variance: 'concept' sections use technical register strictly; 'example' sections relax tone slightly to support comprehension. The humanness-gate threshold (50) is calibrated for the technical register and tolerates this variance."
+        },
+        "source_refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Course modules tolerate sections with empty source_refs ONLY for pedagogical_role='exercise' or 'intro'. Concept and synthesis sections must cite."
+        },
+        "covers_objectives": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Indices into learning_objectives that this section addresses. Drafter validates that every objective is covered by at least one section."
+        },
+        "word_budget": { "type": "integer", "minimum": 200, "maximum": 1500 }
+      },
+      "additionalProperties": false
+    },
+    "exercise": {
+      "type": "object",
+      "required": ["prompt_ar", "difficulty", "answer_key_ar"],
+      "properties": {
+        "prompt_ar": { "type": "string", "minLength": 10 },
+        "difficulty": {
+          "enum": ["beginner", "intermediate", "advanced"]
+        },
+        "answer_key_ar": {
+          "type": "string",
+          "minLength": 5,
+          "description": "Required. Exercises without answer keys are scaffolding holes — the schema rejects them."
+        },
+        "covers_objectives": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -166,10 +166,27 @@ def main() -> int:
     p.add_argument("--output", "-o", help="Where to write generated Arabic content")
     p.add_argument("--list-requirements", action="store_true",
                    help="Print fact-pack requirements per content type and exit")
+    p.add_argument("--validate-outline", metavar="PATH",
+                   help="Validate an outline JSON file against its schema and exit. "
+                        "Schemas live in templates/<type>.outline.json.")
     args = p.parse_args()
 
     if args.list_requirements:
         print(json.dumps(CONTENT_TYPE_REQUIREMENTS, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.validate_outline:
+        # Delegate to validate_outline.py — keeps the schema validator and the
+        # refusal CLI separately runnable while exposing both via author.py.
+        from validate_outline import validate_outline_file
+        errors, resolved_type = validate_outline_file(Path(args.validate_outline), args.type)
+        if errors:
+            print(f"OUTLINE INVALID ({resolved_type or 'unknown'}): {len(errors)} error(s)",
+                  file=sys.stderr)
+            for e in errors:
+                print(f"  - {e}", file=sys.stderr)
+            return 1
+        print(f"OUTLINE OK: conforms to {resolved_type} schema.")
         return 0
 
     # ─ Refusal logic (the v0.1 primary feature) ─

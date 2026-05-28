@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/drxvb/arabic-authoring-suite/templates/book-chapter.outline.json",
+  "title": "Book chapter outline (arabic-authoring-suite)",
+  "description": "Schema for a long-form Arabic book chapter (classical/opinion register). Stricter than article: 4-8 sections, each may contain subsections, total budget 3000-8000 words. Bibliography minimum of 10 sources enforced by author.py before this outline is even drafted.",
+  "type": "object",
+  "required": ["type", "title_ar", "register", "sections", "fact_pack_ref", "chapter_number"],
+  "properties": {
+    "type": {
+      "const": "book-chapter"
+    },
+    "title_ar": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 200
+    },
+    "chapter_number": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Chapter ordinal within the book. Used by v0.2+ for cross-chapter terminology continuity (a future feature)."
+    },
+    "epigraph_ar": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Optional opening epigraph (often Quranic or classical poetry). If present, will be wrapped by sacred_text_guard during drafting and humanizer passes."
+    },
+    "register": {
+      "enum": ["classical", "opinion"],
+      "description": "Classical register is the canonical choice; opinion register is acceptable for argumentative chapters."
+    },
+    "fact_pack_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "thematic_throughlines": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Cross-section threads the chapter develops. The humanizer-as-gate uses these to detect ring-composition violations: a throughline mentioned in section 1 but never returned to."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["heading_ar", "intent", "source_refs", "word_budget"],
+      "properties": {
+        "heading_ar": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "intent": {
+          "type": "string",
+          "minLength": 30,
+          "maxLength": 800,
+          "description": "Book chapters demand longer intent statements than articles (min 30 vs 20). The cognitive structure must survive the larger word budget."
+        },
+        "source_refs": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string" },
+          "description": "Book chapter sections require AT LEAST 2 sources each (vs 1 for article sections). Single-source sections become opinion masquerading as scholarship — the chapter-level minimum of 10 sources should distribute across sections."
+        },
+        "claims": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "subsections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/subsection" },
+          "description": "Optional nested subsections (H3-level). Allowed for sections >= 1500 words."
+        },
+        "word_budget": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 3000
+        }
+      },
+      "additionalProperties": false
+    },
+    "subsection": {
+      "type": "object",
+      "required": ["heading_ar", "intent", "word_budget"],
+      "properties": {
+        "heading_ar": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "intent": { "type": "string", "minLength": 20, "maxLength": 500 },
+        "source_refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Subsections inherit parent section's source_refs if empty; the drafter validates at runtime."
+        },
+        "word_budget": { "type": "integer", "minimum": 150, "maximum": 1500 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

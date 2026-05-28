@@ -2,7 +2,7 @@
 
 > Long-form Arabic authoring (books, articles, courses, news) with mandatory fact-pack discipline. The fourth and final sibling in the `arabic-*` skill family.
 
-**Status:** v0.1 — scaffold + architecture + refusal logic. Outline→Draft→Revise loop in v0.2+.
+**Status:** v0.1.1 — scaffold + refusal logic + per-type outline JSON Schemas + stdlib validator. Real generation loop in v0.2.
 
 ## Why
 
@@ -56,12 +56,30 @@ python scripts/author.py --type article \
     --output article-ar.md
 ```
 
+## v0.1.1 adds
+
+```bash
+# List the four schemas
+python scripts/validate_outline.py --list-schemas
+
+# Validate an outline (resolves type from outline's "type" field)
+python scripts/validate_outline.py my-outline.json
+
+# Or via author.py
+python scripts/author.py --type article --validate-outline my-outline.json
+```
+
+The schemas enforce the corpus-grounding discipline structurally:
+- Article sections need >= 1 source ref; book-chapter sections need >= 2
+- Course modules need >= 3 exercises with answer keys
+- News pieces need explicit `five_w_h` object (the four mandatory Ws as required fields)
+
 ## v0.2 plan
 
-- Per-content-type outline schemas (`templates/article.outline.json`, etc.)
-- Real outline→draft→revise loop
+- Real outline → draft → revise loop
 - LLM integration via `LLM_API_URL` / `LLM_API_KEY` / `LLM_MODEL` env vars
-- Humanizer-gate integration
+- Humanizer-gate integration (`analyze_deep.py` from arabic-ai-text-humanizer)
+- Adversarial eval suite
 
 ## License
 

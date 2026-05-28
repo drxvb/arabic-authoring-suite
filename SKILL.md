@@ -5,7 +5,7 @@ description: "Long-form Arabic authoring skill (books, articles, courses, news) 
 
 # arabic-authoring-suite — Long-Form Arabic Authoring with Fact-Pack Discipline
 
-**Status:** v0.1 — scaffold + architecture + refusal logic for empty-brief prompts. Outline→Draft→Revise loop deferred to v0.2.
+**Status:** v0.1.1 — scaffold + architecture + refusal logic + per-content-type outline JSON Schemas + stdlib validator. The outline→draft→revise loop (with LLM integration and humanizer gate) is deferred to v0.2.
 
 ## Why this skill exists
 
@@ -35,19 +35,18 @@ Each content type has its own:
 - Humanness-gate threshold (book is stricter than news)
 - Fact-pack verification rules
 
-## v0.1 scope (this release)
+## v0.1.1 scope (this release)
 
-- This SKILL.md declaring the architecture + four content types + four disciplines
+- SKILL.md declaring the architecture + four content types + four disciplines
 - `references/01-charter.md` with explicit anti-scope (what this skill REFUSES)
 - `scripts/author.py` CLI with refusal logic for empty-brief prompts and missing fact packs
-- `templates/PLACEHOLDER.md` noting where the per-type outline schemas will land (v0.2)
+- **NEW in v0.1.1:** `templates/{article,book-chapter,course-module,news}.outline.json` — JSON Schema draft-2020-12 schemas for the four content types
+- **NEW in v0.1.1:** `scripts/validate_outline.py` — stdlib JSON Schema validator (subset that covers the schemas)
+- **NEW in v0.1.1:** `author.py --validate-outline <path>` flag — delegates to the validator
+- **NEW in v0.1.1:** `scripts/smoke_test_schemas.py` — release gate (4 positive + 9 negative cases)
 
 ## v0.2 plan
 
-- `templates/article.outline.json` — JSON Schema for article outlines
-- `templates/book-chapter.outline.json` — book chapter schema
-- `templates/course-module.outline.json` — course module schema
-- `templates/news.outline.json` — news piece schema
 - `scripts/author.py` real implementation: outline → per-section draft → humanizer gate → optional regen
 - LLM integration (provider-agnostic via env vars, same pattern as translator)
 - Adversarial eval: 5 "bad brief" samples that should be refused + 5 "good brief" samples that should produce output

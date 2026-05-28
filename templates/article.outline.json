@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/drxvb/arabic-authoring-suite/templates/article.outline.json",
+  "title": "Article outline (arabic-authoring-suite)",
+  "description": "Schema for a long-form Arabic article outline. Consumed by scripts/author.py in v0.2+ to drive section-by-section drafting. Each section must cite at least one source from the fact pack; sections without sources cannot be drafted because the corpus-grounding discipline collapses at the outline stage.",
+  "type": "object",
+  "required": ["type", "title_ar", "register", "sections", "fact_pack_ref"],
+  "properties": {
+    "type": {
+      "const": "article",
+      "description": "Content type discriminator. Must equal 'article'."
+    },
+    "title_ar": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 200,
+      "description": "Article title in Arabic. The schema does not enforce Arabic script (some MSA titles include English brand names); the LLM prompt template enforces script in v0.2."
+    },
+    "subtitle_ar": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "Optional deck/subtitle."
+    },
+    "register": {
+      "enum": ["news", "opinion"],
+      "description": "Register policy applied during drafting. Must match a register declared in arabic-corpus-toolkit/corpus/register-policies.json."
+    },
+    "fact_pack_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relative or absolute path to the fact pack file. The path is validated and source count is re-checked at draft time."
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "description": "Article body. Article register requires 2-4 sections per references/01-charter.md.",
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional topic tags (used for retrieval, not authoring)."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["heading_ar", "intent", "source_refs", "word_budget"],
+      "properties": {
+        "heading_ar": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 500,
+          "description": "What this section accomplishes for the reader. The LLM sees this verbatim; specificity directly drives prose quality."
+        },
+        "source_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Citation keys ([1], [2], ...) from the fact pack that THIS section draws on. Sections with empty source_refs are rejected at draft time — the outline-grounding discipline lives here."
+        },
+        "claims": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific factual claims this section will support. Optional but recommended — claims plus source_refs is the strongest grounding signal."
+        },
+        "word_budget": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000,
+          "description": "Target word count for this section. Sum across sections should fall in the article-level budget (500-2500)."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
