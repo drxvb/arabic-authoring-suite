@@ -94,6 +94,40 @@ def _toolkit_root() -> Optional[Path]:
 _asset_g_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
 
+# v1.5.0: Gap G2 adoption — route compat checks through toolkit asset_registry
+# with legacy major-version fallback.
+def _registry_is_compatible(asset_id: str, observed_version: str) -> bool:
+    """Route to toolkit asset_registry.is_compatible() (v1.6.0+) with
+    legacy major-version fallback when registry import fails."""
+    tk = _toolkit_root()
+    if tk is None:
+        return observed_version.split(".")[0] == "1"
+    try:
+        scripts_dir = tk / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from asset_registry import is_compatible  # type: ignore
+        return is_compatible(asset_id, observed_version)
+    except Exception:
+        return observed_version.split(".")[0] == "1"
+
+
+# v1.5.0: Gap G3 adoption — create InfluenceTrace if toolkit v1.7.0+ available.
+def _new_authoring_trace():
+    """Returns a fresh InfluenceTrace or None."""
+    tk = _toolkit_root()
+    if tk is None:
+        return None
+    try:
+        scripts_dir = tk / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from influence_telemetry import InfluenceTrace  # type: ignore
+        return InfluenceTrace()
+    except Exception:
+        return None
+
+
 def _load_asset_g(domain: str = "technology") -> Optional[Dict[str, Any]]:
     """Load paired EN<->AR terminology for the given domain. None if unavailable.
     Same domain-keyed pattern as translator v1.0.1."""
@@ -113,7 +147,10 @@ def _load_asset_g(domain: str = "technology") -> Optional[Dict[str, Any]]:
     except Exception:
         _asset_g_cache[domain] = None
         return None
-    if data.get("$schema_version", "0.0.0").split(".")[0] != "1":
+    # v1.5.0: route through toolkit asset_registry (G2 adoption) with legacy
+    # major-version fallback when registry import fails (toolkit pre-v1.6.0).
+    observed = data.get("$schema_version", "0.0.0")
+    if not _registry_is_compatible(f"G.{domain}", observed):
         _asset_g_cache[domain] = None
         return None
     by_en = {p.get("en", "").strip().lower(): p for p in data.get("pairs", []) if p.get("en")}
@@ -122,21 +159,33 @@ def _load_asset_g(domain: str = "technology") -> Optional[Dict[str, Any]]:
     return data
 
 
-def _find_terminology_hits(text: str, domain: str) -> List[Dict[str, Any]]:
-    """Whole-word EN scan of text against Asset G for the given domain."""
+def _find_terminology_hits(text: str, domain: str,
+                            trace=None) -> List[Dict[str, Any]]:
+    """Whole-word EN scan of text against Asset G for the given domain.
+    v1.5.0: if a trace is provided, record each term hit as an influence
+    record citing G.{domain} + the term_hint_injected trigger."""
     data = _load_asset_g(domain)
     if data is None or not text:
         return []
     text_lower = text.lower()
     by_en = data.get("_by_en", {})
+    asset_version = data.get("$schema_version", "unknown")
     hits = []
     seen = set()
     for en in sorted(by_en.keys(), key=len, reverse=True):
         if en in seen:
             continue
         if re.search(r"\b" + re.escape(en) + r"\b", text_lower):
-            hits.append(by_en[en])
+            pair = by_en[en]
+            hits.append(pair)
             seen.add(en)
+            if trace is not None:
+                trace.record(
+                    asset_id=f"G.{domain}", asset_version=asset_version,
+                    trigger="term_hint_injected",
+                    evidence={"en": pair.get("en"), "ar": pair.get("ar")},
+                    stage="prompt_construction",
+                )
     return hits
 
 
@@ -379,14 +428,26 @@ def draft_section_swarm(content_type: str, outline: Dict[str, Any],
     }
 
 
+# v1.5.0: hook for callers to opt into influence telemetry on generate().
+# generate() will attach a fresh InfluenceTrace to outline["_trace"] and
+# return its as_json() in the result under "influence_trace".
 def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
              proxy_name: str = "kimi",
              humanness_threshold: int = 60,
              max_regen_per_section: int = 1,
-             swarm_proxies: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Full outline → draft → gate → optional regen loop."""
+             swarm_proxies: Optional[List[str]] = None,
+             emit_trace: bool = False) -> Dict[str, Any]:
+    """Full outline → draft → gate → optional regen loop.
+    v1.5.0: when emit_trace=True, instantiates InfluenceTrace and threads it
+    through prompt construction so every Asset G term hint is causally
+    recorded. The serialized trace is returned in the result dict's
+    influence_trace field."""
     started = time.time()
     sections_out: List[Dict[str, Any]] = []
+    # v1.5.0: attach trace to outline so _find_terminology_hits can append
+    trace = _new_authoring_trace() if emit_trace else None
+    if trace is not None and isinstance(outline, dict):
+        outline["_trace"] = trace
     for i, section in enumerate(outline.get("sections", []), start=1):
         sys.stderr.write(f"Drafting section {i}/{len(outline['sections'])}: {section.get('heading_ar', '')[:50]}\n")
         if swarm_proxies:
@@ -439,7 +500,7 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
         full_text_lines.append("")
     full_text = "\n".join(full_text_lines)
 
-    return {
+    result = {
         "content_type": content_type,
         "proxy_used": proxy_name,
         "model_used": PROXIES[proxy_name]["model"],
@@ -449,6 +510,13 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
         "elapsed_s": round(elapsed, 1),
         "n_regens_total": sum(s["regen_attempts"] for s in sections_out),
     }
+    # v1.5.0: serialize influence trace if telemetry was enabled
+    if trace is not None:
+        result["influence_trace"] = trace.as_json()
+        # Cleanup: remove trace ref from outline so callers don't see it
+        if isinstance(outline, dict):
+            outline.pop("_trace", None)
+    return result
 
 
 def main() -> int:
