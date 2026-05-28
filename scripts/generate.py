@@ -258,6 +258,27 @@ def humanizer_gate(text_ar: str, threshold: int = 60, register: str = "news") ->
     humanizer_scripts = repo_root / "scripts"
     humanizer_module = humanizer_scripts / "humanize_v2.py"
 
+    # v1.3.0: language sanity check — the score_text heuristic only counts
+    # Arabic AI-tells, so an English output trivially scores 100 (false positive
+    # surfaced by swarm mode). Penalize outputs that aren't predominantly Arabic.
+    if text_ar:
+        ar_chars = sum(1 for c in text_ar if '؀' <= c <= 'ۿ')
+        total_letters = sum(1 for c in text_ar if c.isalpha())
+        ar_ratio = (ar_chars / total_letters) if total_letters > 0 else 0.0
+        if ar_ratio < 0.5:
+            return {
+                "available": True,
+                "score": 0,
+                "ai_tell_hits": 0,
+                "total_words": len(text_ar.split()),
+                "threshold": threshold,
+                "passes_gate": False,
+                "backend": "language_check_failed",
+                "language_mismatch": True,
+                "ar_char_ratio": round(ar_ratio, 2),
+                "reason": "output is not predominantly Arabic — likely English or mixed",
+            }
+
     # Try the real humanizer first
     if humanizer_module.exists():
         try:
@@ -292,17 +313,60 @@ def humanizer_gate(text_ar: str, threshold: int = 60, register: str = "news") ->
     }
 
 
+def draft_section_swarm(content_type: str, outline: Dict[str, Any],
+                         section: Dict[str, Any], fact_pack_text: str,
+                         proxies: List[str]) -> Dict[str, Any]:
+    """v1.3.0 cross-LLM swarm drafting: draft the section with each proxy,
+    score each via the humanizer, return the best draft + all candidates.
+
+    Returns {best_draft, best_proxy, best_score, candidates: [...]}.
+    """
+    candidates: List[Dict[str, Any]] = []
+    for prx in proxies:
+        d = draft_section(content_type, outline, section, fact_pack_text, prx)
+        g = humanizer_gate(d, threshold=60)
+        candidates.append({
+            "proxy": prx,
+            "draft_ar": d,
+            "score": g.get("score", 0),
+            "gate": g,
+            "word_count": len(d.split()),
+        })
+    # Pick highest score, break ties on word count (longer ≈ more content)
+    best = max(candidates, key=lambda c: (c["score"], c["word_count"]))
+    return {
+        "best_draft": best["draft_ar"],
+        "best_proxy": best["proxy"],
+        "best_score": best["score"],
+        "candidates": candidates,
+    }
+
+
 def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
              proxy_name: str = "kimi",
              humanness_threshold: int = 60,
-             max_regen_per_section: int = 1) -> Dict[str, Any]:
+             max_regen_per_section: int = 1,
+             swarm_proxies: Optional[List[str]] = None) -> Dict[str, Any]:
     """Full outline → draft → gate → optional regen loop."""
     started = time.time()
     sections_out: List[Dict[str, Any]] = []
     for i, section in enumerate(outline.get("sections", []), start=1):
         sys.stderr.write(f"Drafting section {i}/{len(outline['sections'])}: {section.get('heading_ar', '')[:50]}\n")
-        draft = draft_section(content_type, outline, section, fact_pack_text, proxy_name)
-        gate = humanizer_gate(draft, threshold=humanness_threshold)
+        if swarm_proxies:
+            sys.stderr.write(f"  Swarm mode: {len(swarm_proxies)} proxies competing\n")
+            swarm = draft_section_swarm(content_type, outline, section, fact_pack_text, swarm_proxies)
+            draft = swarm["best_draft"]
+            gate = humanizer_gate(draft, threshold=humanness_threshold)
+            swarm_meta = {
+                "winning_proxy": swarm["best_proxy"],
+                "winning_score": swarm["best_score"],
+                "candidate_scores": {c["proxy"]: c["score"] for c in swarm["candidates"]},
+            }
+            sys.stderr.write(f"  Winner: {swarm['best_proxy']} (score={swarm['best_score']})\n")
+        else:
+            draft = draft_section(content_type, outline, section, fact_pack_text, proxy_name)
+            gate = humanizer_gate(draft, threshold=humanness_threshold)
+            swarm_meta = None
         attempts = 1
         # If gate fails AND we have regen budget, rewrite the section with a tightened prompt
         while not gate["passes_gate"] and attempts <= max_regen_per_section and gate.get("available"):
@@ -321,6 +385,7 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
             "draft_ar": draft,
             "humanizer_gate": gate,
             "regen_attempts": attempts - 1,
+            "swarm": swarm_meta,
         })
 
     elapsed = time.time() - started
@@ -359,6 +424,8 @@ def main() -> int:
     p.add_argument("--proxy", default="kimi", choices=list(PROXIES.keys()))
     p.add_argument("--humanness-threshold", type=int, default=60)
     p.add_argument("--max-regen-per-section", type=int, default=1)
+    p.add_argument("--swarm", help="Comma-separated proxies to compete on each section "
+                                    "(e.g., 'kimi,minimax,gemini'). Best score wins.")
     p.add_argument("--output", "-o", help="Write full text to this file")
     p.add_argument("--json", action="store_true", help="Emit full JSON instead of just text")
     args = p.parse_args()
@@ -366,10 +433,12 @@ def main() -> int:
     outline = json.loads(Path(args.outline_file).read_text(encoding="utf-8"))
     fact_pack = Path(args.fact_pack).read_text(encoding="utf-8")
 
+    swarm = [s.strip() for s in args.swarm.split(",")] if args.swarm else None
     result = generate(args.type, outline, fact_pack,
                       proxy_name=args.proxy,
                       humanness_threshold=args.humanness_threshold,
-                      max_regen_per_section=args.max_regen_per_section)
+                      max_regen_per_section=args.max_regen_per_section,
+                      swarm_proxies=swarm)
 
     if args.output:
         Path(args.output).write_text(result["full_text_ar"], encoding="utf-8")
