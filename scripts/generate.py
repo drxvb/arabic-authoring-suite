@@ -240,23 +240,41 @@ def draft_section(content_type: str, outline: Dict[str, Any],
     return (response or f"[GENERATION FAILED for section: {section.get('heading_ar', '')}]").strip()
 
 
-def humanizer_gate(text_ar: str, threshold: int = 60) -> Dict[str, Any]:
-    """Run the humanizer's analyze pass over a draft. Returns:
-      {available: bool, score: int|None, details: ..., passes_gate: bool}
-    Looks for the humanizer at the sibling-repo path or via env var.
+def humanizer_gate(text_ar: str, threshold: int = 60, register: str = "news") -> Dict[str, Any]:
+    """Score Arabic text via the humanizer's score_text() function (v2.9.0+).
+    Falls back to a 6-tell heuristic if the humanizer isn't importable.
+
+    Returns:
+      {available, score, ai_tell_hits, ai_tell_density_per_1k, total_words,
+       register, ai_phrases_caught, sample_size, threshold, passes_gate, backend}
+
+    v1.1.0: uses humanizer.score_text (67 AI-phrases + 8 intensifier patterns).
+    v1.0.0: used a hard-coded 6-tell heuristic.
     """
     repo_root = Path(__file__).resolve().parent.parent.parent / "arabic-ai-text-humanizer"
     override = os.environ.get("ARABIC_HUMANIZER_ROOT")
     if override:
         repo_root = Path(override)
-    humanizer_script = repo_root / "scripts" / "humanize_v2.py"
-    if not humanizer_script.exists():
-        return {"available": False, "score": None,
-                "reason": "humanizer not found at sibling path",
-                "passes_gate": True}  # No gate = pass through
-    # v1.0.0: cheap heuristic — count AI-tell phrases (a real implementation
-    # would import and call analyze_deep.py). This gives the right shape;
-    # v1.1+ wires real scoring.
+    humanizer_scripts = repo_root / "scripts"
+    humanizer_module = humanizer_scripts / "humanize_v2.py"
+
+    # Try the real humanizer first
+    if humanizer_module.exists():
+        try:
+            if str(humanizer_scripts) not in sys.path:
+                sys.path.insert(0, str(humanizer_scripts))
+            from humanize_v2 import score_text as _score_text  # type: ignore
+            result = _score_text(text_ar, register=register)
+            result["threshold"] = threshold
+            result["passes_gate"] = result.get("score", 0) >= threshold
+            result["backend"] = "humanize_v2.score_text"
+            result["available"] = True
+            return result
+        except Exception as e:
+            # Fall through to heuristic
+            sys.stderr.write(f"  humanizer import failed ({e}); falling back to heuristic\n")
+
+    # Fallback: 6-tell heuristic (v1.0.0 behavior preserved when humanizer unavailable)
     AI_TELLS = ["من المهم ملاحظة", "علاوة على ذلك", "تجدر الإشارة",
                 "في غاية الأهمية", "بشكل عام", "في الواقع"]
     hits = sum(text_ar.count(t) for t in AI_TELLS)
@@ -269,6 +287,8 @@ def humanizer_gate(text_ar: str, threshold: int = 60) -> Dict[str, Any]:
         "total_words": total_words,
         "threshold": threshold,
         "passes_gate": score >= threshold,
+        "backend": "heuristic_fallback (humanizer not importable)",
+        "sample_size": len(AI_TELLS),
     }
 
 
