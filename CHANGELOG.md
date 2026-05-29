@@ -1,7 +1,7 @@
 # Changelog
 
 Long-form Arabic authoring with fact-pack discipline. Versions track the SKILL.md status banner; this file
-is the auditable history (extracted from the inline banner during the A8 audit, 2026-05-29).
+is the auditable per-version history.
 Hard dependencies: `arabic-corpus-toolkit` (calque dictionary + register policies + safe_llm_call) and
 `arabic-ai-text-humanizer` (post-pass humanness gate).
 

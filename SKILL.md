@@ -35,6 +35,15 @@ Each content type has its own:
 - Humanness-gate threshold (book is stricter than news)
 - Fact-pack verification rules
 
+## What ships in v1.8.0
+
+- **Outline-first generation** — `generate()` drafts each section from an approved outline; one-line prompts are refused.
+- **Mandatory fact-pack pre-flight** — `validate_fact_pack()` refuses ungrounded briefs before spending tokens (`refusal_reason: fact_pack_validation_failed`, per-claim coverage diagnostics).
+- **Blocking humanizer gate** — `humanizer_gate_block=True` (default) refuses output when any section fails the humanness threshold after `max_regen_per_section` (`refusal_reason: humanizer_gate_failed`, with each failed section's score/threshold/attempts).
+- **Per-content-type register policies** — book / article / course / news each carry their own threshold, length budget, and fact-pack rules.
+- **`min_consensus` terminology filtering** — restrict Asset G hints to majority/unanimous cross-vendor-validated pairs.
+- **G3 influence telemetry** — every Asset G term hint injected into a section prompt is causally recorded.
+
 ## Dependencies
 
 - **`arabic-corpus-toolkit`** (≥ v1.13.0) — register policies + calque dictionary + `safe_llm_call` resilience contract.
@@ -71,4 +80,4 @@ The refusal is **the product**, not the failure mode. Agent C's design depends o
 
 ## Provenance
 
-Architecture from Agent C's recommendation in `M:\Main\AI\Corpus\humanizer-v2.6-multi-agent-synthesis.md` ("Scope discipline and product architecture" section, "The authoring ≠ humanizing paradox" subsection).
+Architecture from the v2.6.0 multi-agent design review of the humanizer family — Agent C's "Scope discipline and product architecture" recommendation (the "authoring ≠ humanizing paradox": a slop generator with a slop cleaner glued on is still a slop generator unless the *outline* is corpus-grounded).
