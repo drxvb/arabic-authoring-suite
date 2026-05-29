@@ -458,7 +458,8 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
              min_consensus: int = 1,
              validate_fact_pack_first: bool = True,
              fact_pack_min_coverage: float = 0.5,
-             force_generate: bool = False) -> Dict[str, Any]:
+             force_generate: bool = False,
+             humanizer_gate_block: bool = True) -> Dict[str, Any]:
     """Full outline → draft → gate → optional regen loop.
     v1.5.0: when emit_trace=True, instantiates InfluenceTrace and threads it
     through prompt construction so every Asset G term hint is causally
@@ -474,7 +475,17 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
     fact_pack coverage < fact_pack_min_coverage (defaults: article 0.5,
     book-chapter 0.7, course-module 0.6, news 0.5) OR any section has 0
     grounded claims, generate() refuses with structured error.
-    Override with force_generate=True (NOT recommended — defeats the gate)."""
+    Override with force_generate=True (NOT recommended — defeats the gate).
+
+    v1.8.0: humanizer_gate_block=True (default) closes the 3-of-4 A7-vendor-
+    convergent gap (minimax+gemini+deepseek all flagged that the "gate" was
+    actually a polish — sections still shipped even after max_regen
+    exhausted). When True, if any section's humanness score remains below
+    threshold after max_regen_per_section retries, generate() refuses the
+    ENTIRE output with structured error listing failed sections. The skill's
+    own charter ("the humanizer running as a gate, not a polish") is now
+    structurally enforced. Set humanizer_gate_block=False to revert to v1.7.0
+    permissive behavior (bad drafts ship with metadata flagging failure)."""
     started = time.time()
     sections_out: List[Dict[str, Any]] = []
     # v1.7.0: fact-pack pre-flight (closes the 3-of-3 A6 multi-vendor convergent gap)
@@ -547,6 +558,46 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
             "regen_attempts": attempts - 1,
             "swarm": swarm_meta,
         })
+
+    # v1.8.0 gate teeth: if any section failed the humanness gate after max
+    # regens AND humanizer_gate_block=True, REFUSE the entire output. This is
+    # the 3-of-4 A7-vendor-convergent must-have — the skill PROMISES gate-not-
+    # polish; this is the structural enforcement.
+    if humanizer_gate_block:
+        failed_sections = [
+            s for s in sections_out
+            if s.get("humanizer_gate", {}).get("available", True)  # only count when gate ran
+            and not s.get("humanizer_gate", {}).get("passes_gate", True)
+        ]
+        if failed_sections:
+            return {
+                "ok": False,
+                "refused": True,
+                "refusal_reason": "humanizer_gate_failed",
+                "failed_sections": [
+                    {
+                        "section_index": s["section_index"],
+                        "heading_ar": s.get("heading_ar"),
+                        "gate_score": s.get("humanizer_gate", {}).get("score"),
+                        "threshold": humanness_threshold,
+                        "regen_attempts": s.get("regen_attempts", 0),
+                    }
+                    for s in failed_sections
+                ],
+                "sections_drafted_count": len(sections_out),
+                "guidance": (
+                    f"{len(failed_sections)} of {len(sections_out)} sections failed the "
+                    f"humanness gate (score >= {humanness_threshold}) after "
+                    f"{max_regen_per_section} regen attempts. The skill's "
+                    "humanizer-as-gate charter blocks this output. Options: "
+                    "(a) raise max_regen_per_section, "
+                    "(b) lower humanness_threshold, "
+                    "(c) revise the outline's intent text to reduce AI-tells, "
+                    "(d) set humanizer_gate_block=False to permit shipping (NOT recommended)."
+                ),
+                "elapsed": time.time() - started,
+                "sections_with_failures": sections_out,
+            }
 
     elapsed = time.time() - started
     # Assemble the full document
