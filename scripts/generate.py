@@ -455,7 +455,10 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
              max_regen_per_section: int = 1,
              swarm_proxies: Optional[List[str]] = None,
              emit_trace: bool = False,
-             min_consensus: int = 1) -> Dict[str, Any]:
+             min_consensus: int = 1,
+             validate_fact_pack_first: bool = True,
+             fact_pack_min_coverage: float = 0.5,
+             force_generate: bool = False) -> Dict[str, Any]:
     """Full outline → draft → gate → optional regen loop.
     v1.5.0: when emit_trace=True, instantiates InfluenceTrace and threads it
     through prompt construction so every Asset G term hint is causally
@@ -465,9 +468,41 @@ def generate(content_type: str, outline: Dict[str, Any], fact_pack_text: str,
     n_independent_agree (3-vendor cross-validation tier from toolkit
     v1.10.0+). Default=1 preserves prior behavior. Use min_consensus=2 for
     majority-validated terminology only, =3 for unanimous. Pairs lacking
-    the field (G.technology, G.news) pass through unchanged."""
+    the field (G.technology, G.news) pass through unchanged.
+    v1.7.0: validate_fact_pack_first=True (default) runs the 3-of-3 A6-vendor-
+    convergent pre-flight validator before spending LLM tokens. If
+    fact_pack coverage < fact_pack_min_coverage (defaults: article 0.5,
+    book-chapter 0.7, course-module 0.6, news 0.5) OR any section has 0
+    grounded claims, generate() refuses with structured error.
+    Override with force_generate=True (NOT recommended — defeats the gate)."""
     started = time.time()
     sections_out: List[Dict[str, Any]] = []
+    # v1.7.0: fact-pack pre-flight (closes the 3-of-3 A6 multi-vendor convergent gap)
+    if validate_fact_pack_first and not force_generate:
+        try:
+            from validate_fact_pack import validate_fact_pack as _vfp
+            report = _vfp(outline, fact_pack_text, content_type=content_type,
+                          min_coverage_ratio=fact_pack_min_coverage)
+            if not report.ok:
+                return {
+                    "ok": False,
+                    "refused": True,
+                    "refusal_reason": "fact_pack_validation_failed",
+                    "fact_pack_validation": report.as_dict(),
+                    "guidance": (
+                        "Pre-flight fact-pack validation failed. Either: "
+                        "(a) enrich the fact_pack with evidence for the flagged claims, "
+                        "(b) remove the ungrounded claims from the outline, or "
+                        "(c) pass force_generate=True to skip validation (NOT recommended)."
+                    ),
+                    "elapsed": time.time() - started,
+                }
+        except ImportError:
+            # validate_fact_pack module missing — log warning but proceed
+            sys.stderr.write(
+                "WARNING: validate_fact_pack module not available; "
+                "proceeding without pre-flight validation\n"
+            )
     # v1.5.0: attach trace to outline so _find_terminology_hits can append
     trace = _new_authoring_trace() if emit_trace else None
     if trace is not None and isinstance(outline, dict):
