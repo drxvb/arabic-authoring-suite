@@ -35,27 +35,11 @@ Each content type has its own:
 - Humanness-gate threshold (book is stricter than news)
 - Fact-pack verification rules
 
-## Historical — v0.1.1 scaffold scope (superseded; current state is v1.8.0 STABLE, see CHANGELOG.md)
-
-- SKILL.md declaring the architecture + four content types + four disciplines
-- `references/01-charter.md` with explicit anti-scope (what this skill REFUSES)
-- `scripts/author.py` CLI with refusal logic for empty-brief prompts and missing fact packs
-- **NEW in v0.1.1:** `templates/{article,book-chapter,course-module,news}.outline.json` — JSON Schema draft-2020-12 schemas for the four content types
-- **NEW in v0.1.1:** `scripts/validate_outline.py` — stdlib JSON Schema validator (subset that covers the schemas)
-- **NEW in v0.1.1:** `author.py --validate-outline <path>` flag — delegates to the validator
-- **NEW in v0.1.1:** `scripts/smoke_test_schemas.py` — release gate (4 positive + 9 negative cases)
-
-## Historical — original v0.2 plan (delivered in v1.0.0+; full implementation shipped)
-
-- `scripts/author.py` real implementation: outline → per-section draft → humanizer gate → optional regen
-- LLM integration (provider-agnostic via env vars, same pattern as translator)
-- Adversarial eval: 5 "bad brief" samples that should be refused + 5 "good brief" samples that should produce output
-
 ## Dependencies
 
-- **`arabic-corpus-toolkit`** (≥ v1.13.0) — register policies + calque dictionary + `safe_llm_call` resilience contract
-- **`arabic-ai-text-humanizer`** (≥ v2.17.0) — humanness-gate scorer (the analyze_deep.py diagnostic becomes the regen trigger)
-- **`arabic-corpus-translator`** (optional) — for content authored in English that needs Arabic delivery, the translator runs first, then the humanizer gate
+- **`arabic-corpus-toolkit`** (≥ v1.13.0) — register policies + calque dictionary + `safe_llm_call` resilience contract.
+- **`arabic-ai-text-humanizer`** (≥ v2.17.0) — humanness-gate scorer (the diagnostic becomes the regen trigger).
+- **`arabic-corpus-translator`** (optional) — EN source → Arabic delivery before the gate.
 
 ## What this skill is NOT (anti-scope)
 
